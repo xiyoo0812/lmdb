@@ -7,7 +7,7 @@ lmdb的lua封装库！
 - 项目路径如下<br>
   |--proj <br>
   &emsp;|--lua <br>
-  &emsp;|--lmdb
+  &emsp;|--lmdb <br>
   &emsp;|--luakit
 
 
