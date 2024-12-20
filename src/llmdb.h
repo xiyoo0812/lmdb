@@ -20,13 +20,14 @@ namespace llmdb {
         }
 
         void set_codec(codec_base* codec) {
-            m_jcodec = codec;
+            m_codec = codec;
         }
 
         int32_t sync(bool force = true) {
             return mdb_env_sync(_env, force);
         }
         int32_t open(const char* path, uint32_t flags, int mode) {
+            close();
             return mdb_env_open(_env, path, flags, mode);
         }
         int32_t set_flags(uint32_t flags, bool onoff = true) {
@@ -252,49 +253,32 @@ namespace llmdb {
 
     protected:
         void read_key(lua_State* L, int idx, MDB_val& val) {
+            size_t len;
             int type = lua_type(L, idx);
-            if (m_jcodec) {
-                switch (type) {
-                case LUA_TNIL:
-                    val.mv_size = 0;
-                    break;
-                case LUA_TNUMBER: {
-                        size_t len;
-                        char* body = (char*)m_jcodec->encode(L, idx, &len);
-                        strncpy(m_keys, body, len);
-                        val = MDB_val{ len, (void*)m_keys };
-                    }
-                    break;
-                case LUA_TSTRING: {
-                        size_t len;
-                        const char* body = lua_tolstring(L, idx, &len);
-                        if (len >= max_key_size) luaL_error(L, "lmdb read key size %d ge 4096!", len);
-                        val = MDB_val{ len, (void*)body };
-                    }
-                    break;
-                default:
-                    luaL_error(L, "lmdb read key type %s not suppert!", lua_typename(L, idx));
-                    break;
-                }
+            if (type != LUA_TSTRING && type != LUA_TNUMBER) {
+                luaL_error(L, "lmdb read key type %s not suppert!", lua_typename(L, idx));
+            }
+            if (m_codec) {
+                const char* buf = (const char*)m_codec->encode(L, idx, &len);
+                strncpy(m_keys, buf, len);
+                val = MDB_val{ len, (void*)m_keys };
                 return;
             }
-            if (type != LUA_TSTRING) luaL_error(L, "lmdb read key type %s not suppert!", lua_typename(L, idx));
-            size_t len;
-            const char* data = lua_tolstring(L, idx, &len);
-            val = MDB_val{ len, (void*)data };
+            const char* buf = lua_tolstring(L, idx, &len);
+            val = MDB_val{ len, (void*)buf };
         }
 
         void read_value(lua_State* L, int idx, MDB_val& val) {
+            size_t len;
             int type = lua_type(L, idx);
-            if (m_jcodec) {
+            if (m_codec) {
                 switch (type) {
                 case LUA_TNIL:
                 case LUA_TTABLE:
                 case LUA_TNUMBER:
                 case LUA_TSTRING:
                 case LUA_TBOOLEAN: {
-                        size_t len;
-                        char* body = (char*)m_jcodec->encode(L, idx, &len);
+                        char* body = (char*)m_codec->encode(L, idx, &len);
                         val = MDB_val{ len, (void*)body };
                     }
                     break;
@@ -304,24 +288,17 @@ namespace llmdb {
                 }
                 return;
             }
-            switch (type) {
-            case LUA_TNUMBER:
-            case LUA_TSTRING: {
-                    size_t len;
-                    const char* data = lua_tolstring(L, idx, &len);
-                    val = MDB_val{ len, (void*)data };
-                }
-                break;
-            default:
-                luaL_error(L, "lmdb read value type %d not suppert!", type);
-                break;
+            if (type == LUA_TSTRING && type == LUA_TNUMBER) {
+                luaL_error(L, "lsmdb read %d type %s not suppert!", idx, lua_typename(L, idx));
             }
+            const char* data = lua_tolstring(L, idx, &len);
+            val = MDB_val{ len, (void*)data };
         }
 
         void push_value(lua_State* L, MDB_val& val) {
-            if (m_jcodec) {
+            if (m_codec) {
                 try {
-                    m_jcodec->decode(L, (uint8_t*)val.mv_data, val.mv_size);
+                    m_codec->decode(L, (uint8_t*)val.mv_data, val.mv_size);
                 } catch (...) {
                     lua_pushlstring(L, (const char*)val.mv_data, val.mv_size);
                 }
@@ -339,7 +316,7 @@ namespace llmdb {
         MDB_txn* _txn = nullptr;
         MDB_txn* _ro_txn = nullptr;
         MDB_cursor* _cur = nullptr;
-        codec_base* m_jcodec = nullptr;
+        codec_base* m_codec = nullptr;
         char m_keys[max_key_size];
     };
 }
