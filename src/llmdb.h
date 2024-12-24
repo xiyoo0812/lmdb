@@ -288,8 +288,8 @@ namespace llmdb {
                 }
                 return;
             }
-            if (type == LUA_TSTRING && type == LUA_TNUMBER) {
-                luaL_error(L, "lsmdb read %d type %s not suppert!", idx, lua_typename(L, idx));
+            if (type != LUA_TSTRING && type != LUA_TNUMBER) {
+                luaL_error(L, "lsmdb read value %d type %s not suppert!", idx, lua_typename(L, idx));
             }
             const char* data = lua_tolstring(L, idx, &len);
             val = MDB_val{ len, (void*)data };
